@@ -1,0 +1,11 @@
+{
+  "bindings": {
+    "kv": ["STATE"]
+  },
+  "workflows": [
+    {
+      "name": "process-order",
+      "path": "/_w7s/workflows/process-order"
+    }
+  ]
+}

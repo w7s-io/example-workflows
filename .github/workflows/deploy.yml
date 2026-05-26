@@ -1,0 +1,77 @@
+name: Deploy
+
+on: push
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to W7S
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Deploy
+        uses: w7s-io/w7s-cloud@v1
+        with:
+          token: ${{ github.token }}
+
+      - name: Smoke test workflow
+        run: |
+          set -euo pipefail
+          base="https://w7s-io.w7s.cloud/example-workflows"
+          order_id="smoke-${GITHUB_SHA::7}"
+
+          for attempt in {1..12}; do
+            if curl -fsS "$base/health"; then
+              break
+            fi
+            sleep 5
+          done
+
+          start_body="$(curl -fsS "$base/start?orderId=$order_id")"
+          echo "$start_body"
+          instance_id="$(BODY="$start_body" node - <<'NODE'
+          const body = JSON.parse(process.env.BODY);
+          if (body.service !== "example-workflows") {
+            throw new Error(`Unexpected service: ${body.service}`);
+          }
+          if (body.status !== "success") {
+            throw new Error(`Unexpected workflow status: ${body.status}`);
+          }
+          if (!body.data?.instance?.id) {
+            throw new Error("Missing workflow instance id.");
+          }
+          process.stdout.write(body.data.instance.id);
+          NODE
+          )"
+
+          for attempt in {1..30}; do
+            body="$(curl -fsS "$base/last")"
+            echo "$body"
+            if BODY="$body" INSTANCE_ID="$instance_id" ORDER_ID="$order_id" node - <<'NODE'
+          const body = JSON.parse(process.env.BODY);
+          const last = body.last;
+          if (!last) process.exit(1);
+          if (last.run?.instanceId !== process.env.INSTANCE_ID) process.exit(1);
+          if (last.run?.payload?.orderId !== process.env.ORDER_ID) {
+            throw new Error("Workflow payload did not match the smoke order id.");
+          }
+          if (last.headers?.workflow !== "1") {
+            throw new Error("Missing workflow dispatch header.");
+          }
+          NODE
+            then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          curl -fsS "$base/last"
+          exit 1
