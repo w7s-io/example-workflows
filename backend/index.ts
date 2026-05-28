@@ -43,8 +43,6 @@ export default {
           headers: {
             authorization: `Bearer ${env.W7S_WORKFLOW_TOKEN}`,
             "content-type": "application/json",
-            "x-w7s-workflow-caller": env.W7S_REPOSITORY,
-            "x-w7s-workflow-environment": env.W7S_ENVIRONMENT,
             "x-w7s-workflow-instance-id": instanceSeed
           },
           body: JSON.stringify({
